@@ -16,7 +16,7 @@ Redsis Listener is an Electron-based application designed to interface with Ardu
 - **Node.js**: Version 14 or higher
 - **Electron**: Version 13 or higher
 - **SerialPort**: Library for serial communication
-- **Fritzing**: For schematic design
+
 
 ## Installation
 
