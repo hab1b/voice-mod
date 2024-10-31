@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redsis Listener</title>
+    <link rel="stylesheet" href="app.css"/>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: black;
+            color: white;
+            margin: 0;
+            padding-top: 60px; /* To prevent content from being hidden behind the title bar */
+        }
+
+        #video-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            width: 100%;
+        }
+
+        #background-video {
+            width: 80%;
+            max-width: 800px;
+            margin-bottom: 20px;
+        }
+
+        /* Style for COM port selector */
+        #com-port-selector {
+            font-size: 16px;
+            padding: 5px;
+            background-color: black;
+            color: white;
+            border: 1px solid white;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            width: 200px;
+            text-align: center;
+        }
+
+        /* Style for error messages */
+        #error-message {
+            color: red;
+            font-size: 18px;
+            margin-top: 10px;
+            margin-bottom: 10px;
+            text-align: center;
+            width: 80%;
+            max-width: 800px;
+        }
+
+        /* Style for buttons */
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #555;
+            color: white;
+        }
+
+        button:hover {
+            background-color: #777;
+        }
+
+        .titleBar {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 60px;
+            background-color: black;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1000;
+        }
+
+        .dataEntry {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .displayDataEntry {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="titleBar">
+        <img src="./assets/logo-redsis-blanco.png" alt="logo redsis" width="100px" height="50px">
+    </div>
+
+    <div id="video-container">
+        <video id="background-video" autoplay loop muted>
+            <source src="./assets/Locations & Certificats.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+
+        <!-- COM Port Selection -->
+        <select id="com-port-selector">
+            <option disabled>Loading COM ports...</option>
+        </select>
+
+        <!-- Error Message Display -->
+        <div id="error-message"></div>
+
+        <!-- Button Container -->
+        <div class="button-container">
+            <button id="openJsonEditorButton">Edit JSON Data</button>
+        </div>
+
+        <!-- Data Entry Display -->
+        <div class="dataEntry">
+            <p class="displayDataEntry">Waiting for events...</p>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');  // Access Electron IPC in renderer
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            const comPortSelector = document.getElementById('com-port-selector');
+            const errorMessage = document.getElementById('error-message');
+            const openJsonEditorButton = document.getElementById('openJsonEditorButton');
+
+            // Fetch available COM ports from the main process
+            const availablePorts = await ipcRenderer.invoke('list-com-ports');
+
+            // Clear existing options
+            comPortSelector.innerHTML = '';
+
+            if (availablePorts.length === 0) {
+                const option = document.createElement('option');
+                option.text = 'No COM ports available';
+                option.disabled = true;
+                comPortSelector.appendChild(option);
+            } else {
+                // Populate dropdown with available COM ports
+                availablePorts.forEach(port => {
+                    const option = document.createElement('option');
+                    option.value = port;
+                    option.text = port;
+                    comPortSelector.appendChild(option);
+                });
+
+                // Select the first available port by default
+                comPortSelector.selectedIndex = 0;
+
+                // Notify main process to open the default port
+                ipcRenderer.send('set-com-port', comPortSelector.value);
+            }
+
+            // Listen for changes in the dropdown and update the COM port
+            comPortSelector.addEventListener('change', function() {
+                const selectedPort = comPortSelector.value;
+                ipcRenderer.send('set-com-port', selectedPort);
+            });
+
+            // Listen for serial port errors
+            ipcRenderer.on('serial-port-error', (event, data) => {
+                errorMessage.textContent = data.message;
+
+                // Optionally, you can hide the error message after some time
+                setTimeout(() => {
+                    errorMessage.textContent = '';
+                }, 5000);
+            });
+
+            // Listen for the display-event event sent from the backend
+            ipcRenderer.on('display-event', (event, data) => {
+                const displayDataEntry = document.querySelector('.displayDataEntry');
+
+                // Hide the video when processing an event
+                document.getElementById('background-video').style.display = "none";
+
+                // Update display data
+                displayDataEntry.textContent = `Name: ${data.name}, Employee No: ${data.employeeNoString}`;
+
+                // Announce the employee name in Spanish
+                speakText(data.name);
+
+                // After some time, go back to waiting state and show video again
+                setTimeout(() => {
+                    displayDataEntry.textContent = "Waiting for events...";
+                    document.getElementById('background-video').style.display = "block";
+                }, 5000); // Adjust the delay based on your needs
+            });
+
+            // Button to open JSON editor window
+            openJsonEditorButton.addEventListener('click', () => {
+                ipcRenderer.send('open-json-editor'); // Request to open JSON editor window
+            });
+
+            // Speech synthesis setup
+            function getSpanishVoice() {
+                const voices = window.speechSynthesis.getVoices();
+                console.log(voices);
+
+                const spanishVoice = voices.find(voice =>
+                    voice.lang.includes('es') && voice.name.toLowerCase().includes('sabina')
+                );
+                return spanishVoice || voices.find(voice => voice.lang.includes('es'));
+            }
+
+            function speakText(text) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                const spanishVoice = getSpanishVoice();
+                if (spanishVoice) {
+                    utterance.voice = spanishVoice;
+                } else {
+                    console.warn('No suitable Spanish voice found, using default voice.');
+                }
+                window.speechSynthesis.speak(utterance);
+            }
+
+            // Preload voices to avoid delay
+            window.speechSynthesis.onvoiceschanged = () => getSpanishVoice();
+        });
+    </script>
+</body>
+</html>
